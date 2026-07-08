@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:praktikum_paket_ipnar/pages/add_user_page.dart';
 import 'package:praktikum_paket_ipnar/pages/edit_user_page.dart';
+import 'package:praktikum_paket_ipnar/pages/upload_foto_page.dart';
 
 class UserListPage extends StatefulWidget {
   const UserListPage({super.key});
@@ -14,14 +15,21 @@ class _UserListPageState extends State<UserListPage> {
   List users = [];
   List filteredUsers = [];
   bool isLoading = true;
-  TextEditingController searchController = TextEditingController();
+  final TextEditingController searchController = TextEditingController();
   @override
   void initState() {
     super.initState();
     getUsers();
   }
 
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> getUsers() async {
+    if (!mounted) return;
     setState(() {
       isLoading = true;
     });
@@ -31,17 +39,21 @@ class _UserListPageState extends State<UserListPage> {
       );
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
+        if (mounted) {
+          setState(() {
+            users = result["data"] ?? [];
+            filteredUsers = users;
+            isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      print("Error fetching users: $e");
+      if (mounted) {
         setState(() {
-          users = result["data"] ?? [];
-          filteredUsers = users;
           isLoading = false;
         });
       }
-    } catch (e) {
-      print(e);
-      setState(() {
-        isLoading = false;
-      });
     }
   }
 
@@ -52,18 +64,25 @@ class _UserListPageState extends State<UserListPage> {
         body: {"id": id},
       );
       final result = jsonDecode(response.body);
+      if (!mounted) return;
       if (result["status"] == true) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("User berhasil dihapus")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("User berhasil dihapus"),
+            backgroundColor: Colors.green,
+          ),
+        );
         getUsers();
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(result["message"])));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result["message"] ?? "Gagal menghapus user"),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
-      print(e);
+      print("Error deleting user: $e");
     }
   }
 
@@ -90,11 +109,11 @@ class _UserListPageState extends State<UserListPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Daftar User"),
-        backgroundColor: Color(0xff4A43EC),
+        backgroundColor: const Color(0xff4A43EC),
         foregroundColor: Colors.white,
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: Color(0xff4A43EC),
+        backgroundColor: const Color(0xff4A43EC),
         foregroundColor: Colors.white,
         child: const Icon(Icons.add, size: 30),
         onPressed: () async {
@@ -104,7 +123,6 @@ class _UserListPageState extends State<UserListPage> {
           );
           if (result != null) {
             await getUsers();
-            setState(() {});
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -115,7 +133,7 @@ class _UserListPageState extends State<UserListPage> {
                   children: [
                     const Icon(Icons.check_circle, color: Colors.white),
                     const SizedBox(width: 10),
-                    Expanded(child: Text(result)),
+                    Expanded(child: Text(result.toString())),
                   ],
                 ),
               ),
@@ -147,6 +165,9 @@ class _UserListPageState extends State<UserListPage> {
                       : ListView.builder(
                           itemCount: filteredUsers.length,
                           itemBuilder: (context, index) {
+                            String? fotoUrl = filteredUsers[index]["foto"];
+                            String username =
+                                filteredUsers[index]["username"] ?? "U";
                             return Card(
                               margin: const EdgeInsets.symmetric(
                                 horizontal: 12,
@@ -154,19 +175,55 @@ class _UserListPageState extends State<UserListPage> {
                               ),
                               child: ListTile(
                                 leading: CircleAvatar(
+                                  radius: 25,
                                   backgroundColor: const Color(0xff4A43EC),
+                                  foregroundImage:
+                                      fotoUrl != null && fotoUrl.isNotEmpty
+                                      ? NetworkImage(
+                                          Uri.encodeFull(
+                                            "http://localhost/flutter_api/uploads/$fotoUrl",
+                                          ),
+                                        )
+                                      : null,
                                   child: Text(
-                                    filteredUsers[index]["username"][0]
-                                        .toUpperCase(),
-                                    style: const TextStyle(color: Colors.white),
+                                    username.isNotEmpty
+                                        ? username[0].toUpperCase()
+                                        : "U",
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
                                   ),
                                 ),
-                                title: Text(filteredUsers[index]["username"]),
-                                subtitle: Text(filteredUsers[index]["email"]),
+                                title: Text(username),
+                                subtitle: Text(
+                                  filteredUsers[index]["email"] ?? "",
+                                ),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    // Tombol Edit
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.camera_alt,
+                                        color: Colors.blue,
+                                      ),
+                                      tooltip: "Ganti Foto",
+                                      onPressed: () async {
+                                        final refresh = await Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => UploadFotoPage(
+                                              userId:
+                                                  filteredUsers[index]["id"],
+                                            ),
+                                          ),
+                                        );
+                                        if (refresh == true) {
+                                          getUsers();
+                                        }
+                                      },
+                                    ),
                                     IconButton(
                                       icon: const Icon(
                                         Icons.edit,
@@ -189,7 +246,6 @@ class _UserListPageState extends State<UserListPage> {
                                         });
                                       },
                                     ),
-                                    // Tombol Delete
                                     IconButton(
                                       icon: const Icon(
                                         Icons.delete,
@@ -205,16 +261,16 @@ class _UserListPageState extends State<UserListPage> {
                                             ),
                                             actions: [
                                               TextButton(
-                                                onPressed: () {
-                                                  Navigator.pop(context);
-                                                },
+                                                onPressed: () =>
+                                                    Navigator.pop(context),
                                                 child: const Text("Batal"),
                                               ),
                                               TextButton(
                                                 onPressed: () async {
                                                   Navigator.pop(context);
                                                   await deleteUser(
-                                                    filteredUsers[index]["id"],
+                                                    filteredUsers[index]["id"]
+                                                        .toString(),
                                                   );
                                                 },
                                                 child: const Text("Hapus"),
